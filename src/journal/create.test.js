@@ -270,7 +270,8 @@ describe('journal/create', () => {
             expect(entry.createEmbeddedDocuments).toHaveBeenCalledWith('JournalEntryPage', [{
                 name: 'Test Page',
                 type: 'text',
-                text: { content: '' }
+                text: { content: '' },
+                ownership: { default: 0 }
             }]);
 
             expect(result.createdPages).toHaveLength(1);
@@ -313,6 +314,115 @@ describe('journal/create', () => {
             expect(entry.createEmbeddedDocuments).not.toHaveBeenCalled();
             expect(result.createdPages).toHaveLength(0);
             expect(markdownFile.foundryPageUuid).toBe(existingPage.uuid);
+        });
+
+        it('creates new page with explicit ownership matching pagePermission opt-in', async () => {
+            const entry = {
+                id: 'entry-1',
+                name: 'Test Entry',
+                pages: [],
+                createEmbeddedDocuments: jest.fn().mockResolvedValue([mockPage]),
+                delete: jest.fn()
+            };
+
+            mockJournalEntry.create.mockResolvedValue(entry);
+
+            const markdownFile = new MarkdownFile({ filePath: 'test.md' });
+            markdownFile.pagePermission = 2;
+
+            const plan = new JournalStructurePlan({
+                folders: [],
+                entries: [
+                    {
+                        name: 'Test Entry',
+                        folderPath: null,
+                        pages: [
+                            { name: 'Test Page', markdownFile }
+                        ]
+                    }
+                ]
+            });
+
+            await createJournals(plan, [markdownFile]);
+
+            expect(entry.createEmbeddedDocuments).toHaveBeenCalledWith('JournalEntryPage', [{
+                name: 'Test Page',
+                type: 'text',
+                text: { content: '' },
+                ownership: { default: 2 }
+            }]);
+        });
+
+        it('creates new entry with LIMITED ownership when any constituent page opts in', async () => {
+            const entry = {
+                id: 'entry-1',
+                name: 'Test Entry',
+                pages: [],
+                createEmbeddedDocuments: jest.fn().mockResolvedValue([mockPage]),
+                delete: jest.fn()
+            };
+
+            mockJournalEntry.create.mockResolvedValue(entry);
+
+            const noOptIn = new MarkdownFile({ filePath: 'a.md' });
+            const optIn = new MarkdownFile({ filePath: 'b.md' });
+            optIn.pagePermission = 3;
+
+            const plan = new JournalStructurePlan({
+                folders: [],
+                entries: [
+                    {
+                        name: 'Test Entry',
+                        folderPath: null,
+                        pages: [
+                            { name: 'A', markdownFile: noOptIn },
+                            { name: 'B', markdownFile: optIn }
+                        ]
+                    }
+                ]
+            });
+
+            await createJournals(plan, [noOptIn, optIn]);
+
+            expect(mockJournalEntry.create).toHaveBeenCalledWith({
+                name: 'Test Entry',
+                folder: null,
+                ownership: { default: 1 }
+            });
+        });
+
+        it('creates new entry without ownership field when no page opts in', async () => {
+            const entry = {
+                id: 'entry-1',
+                name: 'Test Entry',
+                pages: [],
+                createEmbeddedDocuments: jest.fn().mockResolvedValue([mockPage]),
+                delete: jest.fn()
+            };
+
+            mockJournalEntry.create.mockResolvedValue(entry);
+
+            const markdownFile = new MarkdownFile({ filePath: 'test.md' });
+
+            const plan = new JournalStructurePlan({
+                folders: [],
+                entries: [
+                    {
+                        name: 'Test Entry',
+                        folderPath: null,
+                        pages: [
+                            { name: 'Test Page', markdownFile }
+                        ]
+                    }
+                ]
+            });
+
+            await createJournals(plan, [markdownFile]);
+
+            expect(mockJournalEntry.create).toHaveBeenCalledWith({
+                name: 'Test Entry',
+                folder: null
+            });
         });
 
         it('throws error when folder creation fails', async () => {

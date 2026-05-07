@@ -10,7 +10,7 @@ import resolvePlaceholders from '../reference/resolve.js';
 import { createJournals, rollbackJournals } from '../journal/create';
 import { uploadAssets, rollbackUploads } from '../asset/upload';
 import { updateContent, rollbackUpdates } from '../journal/update';
-import { extractFrontmatter } from '../content/frontmatter.js';
+import { extractFrontmatter, parsePermission } from '../content/frontmatter.js';
 import convertNewlinesToBr from '../content/markdownPreprocess.js';
 import { extractCallouts } from '../callout/extract.js';
 import { replaceCalloutPlaceholders } from '../callout/replace.js';
@@ -338,6 +338,20 @@ export default function createImportPipeline(importOptions, showdownConverter) {
         }),
 
         new PhaseDefinition({
+            name: 'resolve-permissions',
+            execute: async ctx => {
+                let count = 0;
+                for (const markdownFile of ctx.markdownFiles) {
+                    markdownFile.pagePermission = parsePermission(markdownFile.frontmatter);
+                    if (markdownFile.pagePermission !== null) {
+                        count++;
+                    }
+                }
+                return { permissionsResolved: count };
+            }
+        }),
+
+        new PhaseDefinition({
             name: 'extract-callouts',
             execute: async ctx => {
                 let totalCallouts = 0;
@@ -494,11 +508,12 @@ export default function createImportPipeline(importOptions, showdownConverter) {
 
         new PhaseDefinition({
             name: 'update-content',
-            execute: async ctx => {
-                return await updateContent(ctx.markdownFiles);
+            execute: async (ctx, phaseResults) => {
+                const createResult = phaseResults?.get('create-documents');
+                return await updateContent(ctx.markdownFiles, createResult);
             },
             rollback: async (ctx, result) => {
-                await rollbackUpdates(result.updatedPages);
+                await rollbackUpdates(result.updatedPages, result.updatedEntries);
             },
         }),
     ];

@@ -4,6 +4,7 @@ import {
     prependFrontmatter,
     mergeFrontmatter,
     parseYamlLite,
+    parsePermission,
     serializeYamlLite
 } from './frontmatter.js';
 import MarkdownFile from '../domain/MarkdownFile.js';
@@ -345,6 +346,69 @@ describe('parseYamlLite', () => {
 
             expect(result).toBeNull();
         });
+    });
+});
+
+describe('parsePermission', () => {
+    it('returns null for null input', () => {
+        expect(parsePermission(null)).toBeNull();
+    });
+
+    it('returns null for empty string', () => {
+        expect(parsePermission('')).toBeNull();
+    });
+
+    it('returns null for unparseable frontmatter', () => {
+        expect(parsePermission('tags: [unclosed')).toBeNull();
+    });
+
+    it('returns null when show-players is absent', () => {
+        expect(parsePermission('title: Hello\nauthor: Jane')).toBeNull();
+    });
+
+    it('returns null when show-players is false', () => {
+        expect(parsePermission('show-players: false')).toBeNull();
+    });
+
+    it('returns null when show-players is a non-boolean truthy string', () => {
+        expect(parsePermission('show-players: yes')).toBeNull();
+    });
+
+    it('returns OWNER (3) for show-players: true with no player-permission', () => {
+        expect(parsePermission('show-players: true')).toBe(3);
+    });
+
+    it('returns OWNER (3) for player-permission: owner', () => {
+        expect(parsePermission('show-players: true\nplayer-permission: owner')).toBe(3);
+    });
+
+    it('returns OBSERVER (2) for player-permission: observer', () => {
+        expect(parsePermission('show-players: true\nplayer-permission: observer')).toBe(2);
+    });
+
+    it('returns LIMITED (1) for player-permission: limited', () => {
+        expect(parsePermission('show-players: true\nplayer-permission: limited')).toBe(1);
+    });
+
+    it('reads player-permission case-insensitively', () => {
+        expect(parsePermission('show-players: true\nplayer-permission: OBSERVER')).toBe(2);
+        expect(parsePermission('show-players: true\nplayer-permission: Limited')).toBe(1);
+    });
+
+    it('falls back to OWNER for unrecognized player-permission values', () => {
+        expect(parsePermission('show-players: true\nplayer-permission: editor')).toBe(3);
+    });
+
+    it('ignores player-permission when show-players is absent', () => {
+        expect(parsePermission('player-permission: observer')).toBeNull();
+    });
+
+    it('ignores player-permission when show-players is false', () => {
+        expect(parsePermission('show-players: false\nplayer-permission: owner')).toBeNull();
+    });
+
+    it('ignores other unrelated keys in the frontmatter', () => {
+        expect(parsePermission('title: Hello\nshow-players: true\ntags: [a, b]\nplayer-permission: limited')).toBe(1);
     });
 });
 

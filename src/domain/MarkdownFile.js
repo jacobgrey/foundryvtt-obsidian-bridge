@@ -16,7 +16,8 @@ export default class MarkdownFile {
         links: [],
         assets: [],
         foundryPageUuid: null,
-        splitPages: null
+        splitPages: null,
+        pagePermission: null
     };
 
     constructor(options = {}) {

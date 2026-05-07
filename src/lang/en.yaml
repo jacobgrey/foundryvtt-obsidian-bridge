@@ -92,6 +92,7 @@ obsidian-bridge:
     detect-statblock-conflicts: Checking for existing actors
     import-statblock-actors: Creating actors from statblocks
     extract-frontmatter: Extracting frontmatter
+    resolve-permissions: Resolving page permissions
     extract-callouts: Extracting callouts
     convert-line-breaks: Converting line breaks
     replace-callouts: Processing callouts

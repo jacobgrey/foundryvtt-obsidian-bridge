@@ -280,6 +280,176 @@ describe('journal/update', () => {
             expect(result.updatedPages[0].originalFrontmatter).toBe('original: frontmatter');
         });
 
+        describe('ownership rules', () => {
+            function makeEntry({ id = 'entry-1', ownership = null, updateImpl } = {}) {
+                return {
+                    id,
+                    uuid: `JournalEntry.${id}`,
+                    ownership,
+                    update: jest.fn().mockImplementation(updateImpl ?? (() => Promise.resolve()))
+                };
+            }
+
+            function makePage({ uuid, parent, ownership = null }) {
+                return {
+                    uuid,
+                    text: { content: '<p>orig</p>' },
+                    flags: {},
+                    ownership,
+                    parent,
+                    update: jest.fn().mockResolvedValue()
+                };
+            }
+
+            it('writes opt-in ownership on a page with show-players', async () => {
+                const entry = makeEntry({ ownership: { default: 1 } });
+                const page = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.p',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                mockFromUuidSync.mockReturnValue(page);
+
+                const md = new MarkdownFile({ filePath: 't.md', content: '<p>new</p>' });
+                md.foundryPageUuid = page.uuid;
+                md.pagePermission = 2;
+
+                await updateContent([md]);
+
+                expect(page.update).toHaveBeenCalledWith(expect.objectContaining({
+                    'ownership.default': 2
+                }));
+            });
+
+            it('does not touch ownership for an existing page with no opt-in when parent is unchanged', async () => {
+                const entry = makeEntry({ ownership: { default: 0 } });
+                const page = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.p',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                mockFromUuidSync.mockReturnValue(page);
+
+                const md = new MarkdownFile({ filePath: 't.md', content: '<p>new</p>' });
+                md.foundryPageUuid = page.uuid;
+
+                await updateContent([md]);
+
+                const call = page.update.mock.calls[0][0];
+                expect(call).not.toHaveProperty('ownership.default');
+                expect(call).not.toHaveProperty('ownership');
+            });
+
+            it('writes explicit NONE on a no-opt-in page that inherits when parent is being elevated', async () => {
+                const entry = makeEntry({ ownership: { default: 0 } });
+                const inheritingPage = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.silent',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                const optInPage = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.loud',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                mockFromUuidSync
+                    .mockImplementation(uuid => uuid === inheritingPage.uuid ? inheritingPage : optInPage);
+
+                const silent = new MarkdownFile({ filePath: 'silent.md', content: '<p>x</p>' });
+                silent.foundryPageUuid = inheritingPage.uuid;
+                const loud = new MarkdownFile({ filePath: 'loud.md', content: '<p>y</p>' });
+                loud.foundryPageUuid = optInPage.uuid;
+                loud.pagePermission = 3;
+
+                await updateContent([silent, loud]);
+
+                expect(entry.update).toHaveBeenCalledWith({ 'ownership.default': 1 });
+                expect(inheritingPage.update).toHaveBeenCalledWith(expect.objectContaining({
+                    'ownership.default': 0
+                }));
+            });
+
+            it('preserves manual GM ownership on an existing page with explicit ownership and no opt-in', async () => {
+                const entry = makeEntry({ ownership: { default: 1 } });
+                const page = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.p',
+                    parent: entry,
+                    ownership: { default: 2 }
+                });
+                mockFromUuidSync.mockReturnValue(page);
+
+                const md = new MarkdownFile({ filePath: 't.md', content: '<p>new</p>' });
+                md.foundryPageUuid = page.uuid;
+
+                await updateContent([md]);
+
+                const call = page.update.mock.calls[0][0];
+                expect(call).not.toHaveProperty('ownership');
+            });
+
+            it('does not raise an entry that is already at LIMITED or above', async () => {
+                const entry = makeEntry({ ownership: { default: 2 } });
+                const page = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.p',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                mockFromUuidSync.mockReturnValue(page);
+
+                const md = new MarkdownFile({ filePath: 't.md', content: '<p>x</p>' });
+                md.foundryPageUuid = page.uuid;
+                md.pagePermission = 3;
+
+                await updateContent([md]);
+
+                expect(entry.update).not.toHaveBeenCalled();
+            });
+
+            it('skips ownership write on newly created pages (already set at create time)', async () => {
+                const entry = makeEntry({ ownership: { default: 1 } });
+                const page = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.new',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                mockFromUuidSync.mockReturnValue(page);
+
+                const md = new MarkdownFile({ filePath: 't.md', content: '<p>x</p>' });
+                md.foundryPageUuid = page.uuid;
+
+                const createResult = {
+                    createdPages: [{ entry, page }],
+                    createdEntries: [entry]
+                };
+
+                await updateContent([md], createResult);
+
+                const call = page.update.mock.calls[0][0];
+                expect(call).not.toHaveProperty('ownership');
+                expect(entry.update).not.toHaveBeenCalled();
+            });
+
+            it('returns updatedEntries entries for entries that were elevated', async () => {
+                const entry = makeEntry({ ownership: { default: 0 } });
+                const page = makePage({
+                    uuid: 'JournalEntry.entry-1.JournalEntryPage.p',
+                    parent: entry,
+                    ownership: { default: -1 }
+                });
+                mockFromUuidSync.mockReturnValue(page);
+
+                const md = new MarkdownFile({ filePath: 't.md', content: '<p>x</p>' });
+                md.foundryPageUuid = page.uuid;
+                md.pagePermission = 3;
+
+                const result = await updateContent([md]);
+
+                expect(result.updatedEntries).toHaveLength(1);
+                expect(result.updatedEntries[0].entry).toBe(entry);
+                expect(result.updatedEntries[0].originalOwnershipDefault).toBe(0);
+            });
+        });
+
         it('handles missing flags when storing originalFrontmatter', async () => {
             const mockPage = {
                 uuid: 'JournalEntry.entry-1.JournalEntryPage.page-1',
@@ -421,6 +591,57 @@ describe('journal/update', () => {
                 'flags.obsidian-bridge.frontmatter': 'title: Original',
                 'flags.obsidian-bridge.lastSyncedAt': 12345
             });
+        });
+
+        it('restores entry ownership when updatedEntries is provided', async () => {
+            const entry = {
+                uuid: 'JournalEntry.entry-1',
+                id: 'entry-1',
+                update: jest.fn().mockResolvedValue()
+            };
+
+            await rollbackUpdates([], [
+                { entry, originalOwnershipDefault: 0 }
+            ]);
+
+            expect(entry.update).toHaveBeenCalledWith({ 'ownership.default': 0 });
+        });
+
+        it('restores both pages and entries when both provided', async () => {
+            const callOrder = [];
+            const page = {
+                uuid: 'p',
+                update: jest.fn().mockImplementation(() => { callOrder.push('page'); return Promise.resolve(); })
+            };
+            const entry = {
+                uuid: 'JournalEntry.entry-1',
+                id: 'entry-1',
+                update: jest.fn().mockImplementation(() => { callOrder.push('entry'); return Promise.resolve(); })
+            };
+
+            await rollbackUpdates(
+                [{ page, originalContent: '', originalFrontmatter: null, originalLastSyncedAt: null, originalOwnershipDefault: 1 }],
+                [{ entry, originalOwnershipDefault: 0 }]
+            );
+
+            expect(page.update).toHaveBeenCalledWith(expect.objectContaining({
+                'ownership.default': 1
+            }));
+            expect(entry.update).toHaveBeenCalled();
+            expect(callOrder).toEqual(['page', 'entry']);
+        });
+
+        it('skips ownership in page rollback payload when originalOwnershipDefault is null', async () => {
+            const page = { uuid: 'p', update: jest.fn().mockResolvedValue() };
+
+            await rollbackUpdates(
+                [{ page, originalContent: '', originalFrontmatter: null, originalLastSyncedAt: null, originalOwnershipDefault: null }],
+                []
+            );
+
+            const call = page.update.mock.calls[0][0];
+            expect(call).not.toHaveProperty('ownership.default');
+            expect(call).not.toHaveProperty('ownership');
         });
 
         it('restores null frontmatter correctly', async () => {

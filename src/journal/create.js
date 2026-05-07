@@ -73,6 +73,10 @@ async function createFolders(folders, createdFolders, destinationFolderId = null
     return folderMap;
 }
 
+function entryHasPlayerVisiblePage(entryPlan) {
+    return entryPlan.pages.some(pagePlan => pagePlan.markdownFile?.pagePermission != null);
+}
+
 async function createEntries(entries, folderMap, createdEntries, destinationFolderId = null) {
     const entryMap = new Map();
 
@@ -95,10 +99,16 @@ async function createEntries(entries, folderMap, createdEntries, destinationFold
             continue;
         }
 
-        const entry = await JournalEntry.create({
+        const createPayload = {
             name: entryPlan.name,
             folder: folderId
-        });
+        };
+
+        if (entryHasPlayerVisiblePage(entryPlan)) {
+            createPayload.ownership = { default: 1 };
+        }
+
+        const entry = await JournalEntry.create(createPayload);
 
         if (!entry) {
             throw new Error(`Failed to create journal entry: ${entryPlan.name}`);
@@ -128,10 +138,13 @@ async function createPages(entries, entryMap, createdPages) {
                 continue;
             }
 
+            const ownershipDefault = pagePlan.markdownFile?.pagePermission ?? 0;
+
             const pages = await entry.createEmbeddedDocuments('JournalEntryPage', [{
                 name: pagePlan.name,
                 type: 'text',
-                text: { content: '' }
+                text: { content: '' },
+                ownership: { default: ownershipDefault }
             }]);
 
             if (!pages || pages.length === 0) {

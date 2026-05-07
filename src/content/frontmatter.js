@@ -92,6 +92,46 @@ export function mergeFrontmatter(frontmatterStrings) {
 }
 
 /**
+ * Resolves a frontmatter string into a Foundry page ownership level.
+ *
+ * Returns null when the file does not opt into player visibility (no
+ * `show-players: true`), or when the frontmatter cannot be parsed. Returns 1/2/3
+ * (LIMITED/OBSERVER/OWNER) when `show-players: true` is present.
+ *
+ * `player-permission` is read case-insensitively and only honored when
+ * `show-players: true` is also present. Unrecognized values fall back to OWNER.
+ *
+ * @param {string|null} frontmatterString - Raw frontmatter (without delimiters)
+ * @returns {null|1|2|3}
+ */
+export function parsePermission(frontmatterString) {
+    if (!frontmatterString) {
+        return null;
+    }
+
+    const parsed = parseYamlLite(frontmatterString);
+    if (parsed === null) {
+        return null;
+    }
+
+    if (parsed['show-players'] !== true) {
+        return null;
+    }
+
+    const raw = parsed['player-permission'];
+    if (typeof raw !== 'string') {
+        return 3;
+    }
+
+    switch (raw.toLowerCase()) {
+        case 'limited': return 1;
+        case 'observer': return 2;
+        case 'owner': return 3;
+        default: return 3;
+    }
+}
+
+/**
  * Simple YAML parser for typical Obsidian frontmatter.
  * Handles top-level scalars, simple arrays, and one level of nesting.
  *
