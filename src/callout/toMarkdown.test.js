@@ -180,6 +180,83 @@ describe('extractCalloutsToPlaceholders', () => {
         });
     });
 
+    describe('secret block extraction', () => {
+        it('extracts <section class="secret"> with <p><strong> title as a [!secret] callout', () => {
+            const html = '<section class="secret"><p><strong>Hidden Plot</strong></p><p>Players cannot see this.</p></section>';
+
+            const result = extractCalloutsToPlaceholders(html, mockShowdown);
+
+            expect(result.callouts).toHaveLength(1);
+            expect(result.callouts[0].type).toBe('secret');
+            expect(result.callouts[0].customTitle).toBe(true);
+            expect(result.callouts[0].title).toBe('Hidden Plot');
+            expect(result.callouts[0].body).toBe('Players cannot see this.');
+            expect(result.callouts[0].foldable).toBe(false);
+        });
+
+        it('extracts <section class="secret"> without title as a [!secret] callout with no title', () => {
+            const html = '<section class="secret"><p>GM-only content.</p></section>';
+
+            const result = extractCalloutsToPlaceholders(html, mockShowdown);
+
+            expect(result.callouts).toHaveLength(1);
+            expect(result.callouts[0].type).toBe('secret');
+            expect(result.callouts[0].customTitle).toBe(false);
+            expect(result.callouts[0].title).toBe('');
+            expect(result.callouts[0].body).toBe('GM-only content.');
+        });
+
+        it('does not treat a leading <p> with extra text as a title', () => {
+            const html = '<section class="secret"><p><strong>Bold</strong> but mixed</p><p>Body.</p></section>';
+
+            const result = extractCalloutsToPlaceholders(html, mockShowdown);
+
+            expect(result.callouts[0].customTitle).toBe(false);
+            expect(result.callouts[0].title).toBe('');
+            expect(result.callouts[0].body).toContain('Bold');
+            expect(result.callouts[0].body).toContain('Body.');
+        });
+
+        it('unwraps nested section.secret elements before extraction (V13 bug defense)', () => {
+            const html = '<section class="secret"><p>Outer.</p><section class="secret"><p>Inner.</p></section></section>';
+
+            const result = extractCalloutsToPlaceholders(html, mockShowdown);
+
+            expect(result.callouts).toHaveLength(1);
+            expect(result.callouts[0].body).toContain('Outer.');
+            expect(result.callouts[0].body).toContain('Inner.');
+        });
+
+        it('preserves document order when secret blocks are mixed with obsidian callouts', () => {
+            const html = '<div class="obsidian-callout" data-callout-type="note" data-callout-custom-title="true"><div class="callout-title">First</div><div class="callout-content"><p>One</p></div></div><section class="secret"><p>Two</p></section><div class="obsidian-callout" data-callout-type="warning" data-callout-custom-title="true"><div class="callout-title">Third</div><div class="callout-content"><p>Three</p></div></div>';
+
+            const result = extractCalloutsToPlaceholders(html, mockShowdown);
+
+            expect(result.callouts).toHaveLength(3);
+            expect(result.callouts[0].type).toBe('note');
+            expect(result.callouts[1].type).toBe('secret');
+            expect(result.callouts[2].type).toBe('warning');
+        });
+
+        it('replaces secret sections with paragraph-wrapped placeholders', () => {
+            const html = '<section class="secret"><p>Hidden.</p></section>';
+
+            const result = extractCalloutsToPlaceholders(html, mockShowdown);
+
+            expect(result.content).toContain('<p>{{CALLOUT:0}}</p>');
+        });
+
+        it('round-trips a secret block through extract + restore', () => {
+            const html = '<section class="secret"><p><strong>Hidden Plot</strong></p><p>Players cannot see this.</p></section>';
+
+            const extracted = extractCalloutsToPlaceholders(html, mockShowdown);
+            const restored = restoreCalloutPlaceholders(extracted.content, extracted.callouts);
+
+            expect(restored).toContain('> [!secret] Hidden Plot');
+            expect(restored).toContain('> Players cannot see this.');
+        });
+    });
+
     describe('edge cases', () => {
         it('should return empty string and empty array for empty content', () => {
             const result = extractCalloutsToPlaceholders('', mockShowdown);

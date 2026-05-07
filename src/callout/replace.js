@@ -28,6 +28,10 @@ function renderCallout(callout, showdownConverter) {
         displayTitle = titleHtml.replace(/^<p>|<\/p>$/g, '').trim();
     }
 
+    if (type === 'secret') {
+        return renderSecretCallout(customTitle, title, body, showdownConverter);
+    }
+
     const template = Handlebars.partials.callout;
     return template({
         type,
@@ -37,6 +41,23 @@ function renderCallout(callout, showdownConverter) {
         displayTitle,
         bodyHtml: body ? showdownConverter.makeHtml(body) : ''
     }).trim();
+}
+
+/**
+ * Renders a [!secret] callout as Foundry's native secret block. Foundry hides
+ * <section class="secret"> contents from non-GM players at the element level,
+ * so the block must use that exact tag and class — not the obsidian-callout
+ * div wrapper used for styled callouts.
+ */
+function renderSecretCallout(customTitle, title, body, showdownConverter) {
+    const bodyHtml = body ? showdownConverter.makeHtml(body) : '';
+
+    if (customTitle && title) {
+        const titleHtml = showdownConverter.makeHtml(title).replace(/^<p>|<\/p>$/g, '').trim();
+        return `<section class="secret"><p><strong>${titleHtml}</strong></p>${bodyHtml}</section>`;
+    }
+
+    return `<section class="secret">${bodyHtml}</section>`;
 }
 
 /**

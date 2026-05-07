@@ -236,6 +236,74 @@ describe('replaceCalloutPlaceholders', () => {
         });
     });
 
+    describe('secret callouts', () => {
+        it('renders [!secret] with title as <section class="secret"> with bolded title', () => {
+            const content = '{{CALLOUT:0}}';
+            const callouts = [
+                new Callout({ type: 'secret', title: 'Hidden Plot', customTitle: true, foldable: false, defaultOpen: true, body: 'Players cannot see this.' })
+            ];
+
+            const result = replaceCalloutPlaceholders(content, callouts, mockShowdown);
+
+            expect(result).toContain('<section class="secret">');
+            expect(result).toContain('<p><strong>Hidden Plot</strong></p>');
+            expect(result).toContain('<p>Players cannot see this.</p>');
+            expect(result).toContain('</section>');
+            expect(result).not.toContain('obsidian-callout');
+        });
+
+        it('renders [!secret] without title omitting the bolded title line', () => {
+            const content = '{{CALLOUT:0}}';
+            const callouts = [
+                new Callout({ type: 'secret', title: '', customTitle: false, foldable: false, defaultOpen: true, body: 'GM-only.' })
+            ];
+
+            const result = replaceCalloutPlaceholders(content, callouts, mockShowdown);
+
+            expect(result).toContain('<section class="secret">');
+            expect(result).toContain('<p>GM-only.</p>');
+            expect(result).not.toContain('<strong>');
+        });
+
+        it('renders [!secret] with empty body and no title as a bare secret section', () => {
+            const content = '{{CALLOUT:0}}';
+            const callouts = [
+                new Callout({ type: 'secret', title: '', customTitle: false, foldable: false, defaultOpen: true, body: '' })
+            ];
+
+            const result = replaceCalloutPlaceholders(content, callouts, mockShowdown);
+
+            expect(result).toContain('<section class="secret">');
+            expect(result).toContain('</section>');
+        });
+
+        it('renders inline markdown in secret title via the converter', () => {
+            const showdown = { makeHtml: md => `<p>${md.replace(/\*(.+?)\*/g, '<em>$1</em>')}</p>` };
+            const content = '{{CALLOUT:0}}';
+            const callouts = [
+                new Callout({ type: 'secret', title: '*Confidential* Notes', customTitle: true, foldable: false, defaultOpen: true, body: 'Body.' })
+            ];
+
+            const result = replaceCalloutPlaceholders(content, callouts, showdown);
+
+            expect(result).toContain('<p><strong><em>Confidential</em> Notes</strong></p>');
+        });
+
+        it('does not affect other callout types when secret is present', () => {
+            const content = '{{CALLOUT:0}}\n{{CALLOUT:1}}';
+            const callouts = [
+                new Callout({ type: 'secret', title: '', customTitle: false, foldable: false, defaultOpen: true, body: 'Hidden.' }),
+                new Callout({ type: 'note', title: '', customTitle: false, foldable: false, defaultOpen: true, body: 'Visible.' })
+            ];
+
+            const result = replaceCalloutPlaceholders(content, callouts, mockShowdown);
+
+            expect(result).toContain('<section class="secret">');
+            expect(result).toContain('<div class="obsidian-callout"');
+            expect(result).toContain('data-callout-type="note"');
+        });
+    });
+
     describe('markdown in title', () => {
         it('should convert bold markdown in custom title', () => {
             const showdown = { makeHtml: md => `<p>${md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>` };
