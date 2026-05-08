@@ -325,7 +325,7 @@ describe('uploadAssets', () => {
             expect(result.nonMarkdownFiles[0].foundryDataPath).toBe('worlds/test/vault/images/asset.png');
         });
 
-        it('should throw error when upload fails', async () => {
+        it('should record failure and continue when upload returns null', async () => {
             const file = new MarkdownFile({
                 filePath: 'file.md',
                 content: 'content',
@@ -343,10 +343,16 @@ describe('uploadAssets', () => {
 
             mockFilePicker.upload.mockResolvedValue(null);
 
-            await expect(uploadAssets([file], vaultFiles, importOptions)).rejects.toThrow('Failed to upload asset: asset.png');
+            const result = await uploadAssets([file], vaultFiles, importOptions);
+
+            expect(result.nonMarkdownFiles).toHaveLength(0);
+            expect(result.uploadedPaths).toHaveLength(0);
+            expect(result.failedAssets).toEqual([
+                { path: 'asset.png', reason: 'upload returned no path' }
+            ]);
         });
 
-        it('should throw error when upload response missing path', async () => {
+        it('should record failure and continue when upload response missing path', async () => {
             const file = new MarkdownFile({
                 filePath: 'file.md',
                 content: 'content',
@@ -364,7 +370,68 @@ describe('uploadAssets', () => {
 
             mockFilePicker.upload.mockResolvedValue({ path: null });
 
-            await expect(uploadAssets([file], vaultFiles, importOptions)).rejects.toThrow('Failed to upload asset: asset.png');
+            const result = await uploadAssets([file], vaultFiles, importOptions);
+
+            expect(result.failedAssets).toEqual([
+                { path: 'asset.png', reason: 'upload returned no path' }
+            ]);
+        });
+
+        it('should record failure and continue when FilePicker.upload throws (e.g. disallowed file type)', async () => {
+            const file = new MarkdownFile({
+                filePath: 'file.md',
+                content: 'content',
+                assets: [
+                    new Reference({ source: '![img](good.png)', obsidian: 'good.png', foundry: 'good.png', type: 'asset', isImage: true }),
+                    new Reference({ source: '![exe](bad.exe)', obsidian: 'bad.exe', foundry: 'bad.exe', type: 'asset', isImage: false })
+                ]
+            });
+            file.foundryPageUuid = 'JournalEntryPage.abc123';
+
+            const vaultFiles = createMockFileList([
+                { name: 'good.png', path: 'vault/good.png' },
+                { name: 'bad.exe', path: 'vault/bad.exe' }
+            ]);
+
+            const importOptions = new ImportOptions({ dataPath: 'worlds/test/vault' });
+
+            mockFilePicker.upload.mockImplementation(async (_, __, vaultFile) => {
+                if (vaultFile.name === 'bad.exe') {
+                    throw new Error('File type not permitted');
+                }
+                return { path: `worlds/test/vault/${vaultFile.name}` };
+            });
+
+            const result = await uploadAssets([file], vaultFiles, importOptions);
+
+            expect(result.nonMarkdownFiles).toHaveLength(1);
+            expect(result.uploadedPaths).toEqual(['worlds/test/vault/good.png']);
+            expect(result.failedAssets).toEqual([
+                { path: 'bad.exe', reason: 'File type not permitted' }
+            ]);
+            expect(mockConsole.warn).toHaveBeenCalledWith(
+                'Skipping asset that failed to upload: bad.exe (File type not permitted)'
+            );
+        });
+
+        it('should record failedAssets entry when asset is missing from vault', async () => {
+            const file = new MarkdownFile({
+                filePath: 'file.md',
+                content: 'content',
+                assets: [
+                    new Reference({ source: '![img](missing.png)', obsidian: 'missing.png', foundry: 'missing.png', type: 'asset', isImage: true })
+                ]
+            });
+            file.foundryPageUuid = 'JournalEntryPage.abc123';
+
+            const vaultFiles = createMockFileList([]);
+            const importOptions = new ImportOptions({ dataPath: 'worlds/test/vault' });
+
+            const result = await uploadAssets([file], vaultFiles, importOptions);
+
+            expect(result.failedAssets).toEqual([
+                { path: 'missing.png', reason: 'not found in vault' }
+            ]);
         });
 
         it('should upload multiple assets in parallel', async () => {
