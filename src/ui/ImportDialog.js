@@ -19,7 +19,7 @@ export default class ImportDialog extends HandlebarsApplicationMixin(Application
         const combineNotes = savedPrefs.combineNotes ?? false;
         const splitByHeadings = combineNotes ? false : (savedPrefs.splitByHeadings ?? false);
         this.importOptions = new ImportOptions({
-            dataPath: savedPrefs.dataPath ?? `worlds/${game.world.id}/obsidian-assets`,
+            dataPath: savedPrefs.dataPath || `worlds/${game.world.id}/obsidian-assets`,
             combineNotes,
             skipFolderCombine: savedPrefs.skipFolderCombine ?? false,
             importAssets: savedPrefs.importAssets ?? false,
@@ -316,7 +316,9 @@ export default class ImportDialog extends HandlebarsApplicationMixin(Application
         this.importOptions.strictLineBreaks = data.strictLineBreaks || false;
         this.importOptions.splitByHeadings = data.splitByHeadings || false;
         this.importOptions.splitHeadingLevel = parseInt(data.splitHeadingLevel, 10) || 1;
-        this.importOptions.dataPath = data.dataPath || '';
+        if (data.dataPath !== undefined) {
+            this.importOptions.dataPath = data.dataPath;
+        }
         this.importOptions.importStatblocks = data.importStatblocks || false;
         this.importOptions.statblockFolder = data.statblockFolder ? game.folders.get(data.statblockFolder) : null;
         this.importOptions.destinationFolder = data.destinationFolder ? game.folders.get(data.destinationFolder) : null;
