@@ -12,6 +12,7 @@ import { uploadAssets, rollbackUploads } from '../asset/upload';
 import { updateContent, rollbackUpdates } from '../journal/update';
 import { extractFrontmatter, parsePermission } from '../content/frontmatter.js';
 import convertNewlinesToBr from '../content/markdownPreprocess.js';
+import escapeTagHeadings from '../content/escapeTagHeadings.js';
 import { extractCallouts } from '../callout/extract.js';
 import { replaceCalloutPlaceholders } from '../callout/replace.js';
 import { detectConflicts, filterSkippedFiles } from '../conflict/detectConflicts.js';
@@ -362,6 +363,26 @@ export default function createImportPipeline(importOptions, showdownConverter) {
                     totalCallouts += result.callouts.length;
                 }
                 return { calloutsExtracted: totalCallouts };
+            }
+        }),
+
+        new PhaseDefinition({
+            name: 'escape-tag-headings',
+            execute: async ctx => {
+                let totalEscaped = 0;
+                for (const markdownFile of ctx.markdownFiles) {
+                    const mainResult = escapeTagHeadings(markdownFile.content);
+                    markdownFile.content = mainResult.content;
+                    totalEscaped += mainResult.escaped;
+
+                    const callouts = ctx.callouts.get(markdownFile.filePath) || [];
+                    for (const callout of callouts) {
+                        const bodyResult = escapeTagHeadings(callout.body);
+                        callout.body = bodyResult.content;
+                        totalEscaped += bodyResult.escaped;
+                    }
+                }
+                return { tagsEscaped: totalEscaped };
             }
         }),
 

@@ -94,6 +94,7 @@ obsidian-bridge:
     extract-frontmatter: Extracting frontmatter
     resolve-permissions: Resolving page permissions
     extract-callouts: Extracting callouts
+    escape-tag-headings: Protecting Obsidian tags
     convert-line-breaks: Converting line breaks
     replace-callouts: Processing callouts
     extract-references: Extracting references
