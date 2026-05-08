@@ -366,8 +366,18 @@ export default class ImportDialog extends HandlebarsApplicationMixin(Application
             const assetCount = uploadResult?.uploadedPaths?.length || 0;
             const pageCount = updateResult?.updatedPages?.length || 0;
             const fileCount = parseResult?.markdownFiles?.length || 0;
+            const failedAssets = uploadResult?.failedAssets || [];
 
             ui.notifications.info(`Import complete: ${pageCount} pages updated from ${fileCount} files, ${assetCount} assets`);
+
+            if (failedAssets.length > 0) {
+                console.warn('Obsidian Bridge | Some assets were skipped during import:', failedAssets);
+                const sample = failedAssets.slice(0, 3).map(f => f.path).join(', ');
+                const more = failedAssets.length > 3 ? `, +${failedAssets.length - 3} more` : '';
+                ui.notifications.warn(
+                    `${failedAssets.length} asset(s) skipped (e.g. disallowed file type): ${sample}${more}. See console for details.`
+                );
+            }
 
             this.close();
         } finally {

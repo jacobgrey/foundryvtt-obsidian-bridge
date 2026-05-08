@@ -12,26 +12,31 @@ import { collectRequiredDirectories } from '../journal/collect';
  * Uploads non-markdown assets referenced in imported markdown files.
  * Only uploads assets from MarkdownFiles that were actually imported (have foundryPageUuid).
  *
+ * Per-asset failures (e.g. Foundry rejecting a disallowed file type) are caught and
+ * collected as `failedAssets` rather than aborting the import. Successfully uploaded
+ * assets are still tracked in `uploadedPaths` for rollback.
+ *
  * @param {MarkdownFile[]} markdownFiles - All markdown files (will filter to imported only)
  * @param {FileList} vaultFiles - Original FileList from vault selection
  * @param {ImportOptions} importOptions - Import configuration (dataPath)
- * @returns {Promise<{nonMarkdownFiles: NonMarkdownFile[], uploadedPaths: string[]}>}
- * @throws {Error} If any upload fails
+ * @returns {Promise<{nonMarkdownFiles: NonMarkdownFile[], uploadedPaths: string[], failedAssets: Array<{path: string, reason: string}>}>}
  */
 export async function uploadAssets(markdownFiles, vaultFiles, importOptions) {
     const importedFiles = markdownFiles.filter(mf => mf.foundryPageUuid);
     const uniqueAssetPaths = collectUniqueAssetPaths(importedFiles);
 
     if (uniqueAssetPaths.size === 0) {
-        return { nonMarkdownFiles: [], uploadedPaths: [] };
+        return { nonMarkdownFiles: [], uploadedPaths: [], failedAssets: [] };
     }
 
+    const failedAssets = [];
     const resolvedAssets = [];
     for (const assetPath of uniqueAssetPaths) {
         const vaultFile = resolveAssetFile(assetPath, vaultFiles);
 
         if (!vaultFile) {
             console.warn(`Asset referenced but not found in vault: ${assetPath}`);
+            failedAssets.push({ path: assetPath, reason: 'not found in vault' });
             continue;
         }
 
@@ -53,23 +58,37 @@ export async function uploadAssets(markdownFiles, vaultFiles, importOptions) {
                 ? `${importOptions.dataPath}/${pathParts.join('/')}`
                 : importOptions.dataPath;
 
-            const response = await FilePicker.upload('data', directory, vaultFile, {}, { notify: false });
+            try {
+                const response = await FilePicker.upload('data', directory, vaultFile, {}, { notify: false });
 
-            if (!response || !response.path) {
-                throw new Error(`Failed to upload asset: ${vaultRelativePath}`);
+                if (!response || !response.path) {
+                    return { kind: 'failed', path: vaultRelativePath, reason: 'upload returned no path' };
+                }
+
+                const nonMarkdownFile = new NonMarkdownFile({ filePath: vaultRelativePath });
+                nonMarkdownFile.foundryDataPath = response.path;
+
+                return { kind: 'success', nonMarkdownFile, uploadedPath: response.path };
+            } catch (error) {
+                const reason = error?.message || String(error);
+                console.warn(`Skipping asset that failed to upload: ${vaultRelativePath} (${reason})`);
+                return { kind: 'failed', path: vaultRelativePath, reason };
             }
-
-            const nonMarkdownFile = new NonMarkdownFile({ filePath: vaultRelativePath });
-            nonMarkdownFile.foundryDataPath = response.path;
-
-            return { nonMarkdownFile, uploadedPath: response.path };
         })
     );
 
-    const nonMarkdownFiles = uploadResults.map(r => r.nonMarkdownFile);
-    const uploadedPaths = uploadResults.map(r => r.uploadedPath);
+    const nonMarkdownFiles = [];
+    const uploadedPaths = [];
+    for (const result of uploadResults) {
+        if (result.kind === 'success') {
+            nonMarkdownFiles.push(result.nonMarkdownFile);
+            uploadedPaths.push(result.uploadedPath);
+        } else {
+            failedAssets.push({ path: result.path, reason: result.reason });
+        }
+    }
 
-    return { nonMarkdownFiles, uploadedPaths };
+    return { nonMarkdownFiles, uploadedPaths, failedAssets };
 }
 
 /**
